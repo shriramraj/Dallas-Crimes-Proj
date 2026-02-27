@@ -1,0 +1,418 @@
+---
+title: "Project"
+author: "Om Badhe"
+date: "2/28/23"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(stringr)
+library(lubridate)
+library(tidyverse)
+library(dplyr)
+library(base)
+dallas_crimes <- read.csv(file = "crime.csv", header = T)
+phoenix_crimes <- read.csv(file = "arrestdetail.csv")
+# cleaning the data
+
+# sub-setting the data to get only from 2018-2022
+index <- which(dallas_crimes$Arrest.Year >= 2018 & dallas_crimes$Arrest.Year <= 2022)
+dallas_crimes <- dallas_crimes[dallas_crimes$Arrest.Year >= 2018 & dallas_crimes$Arrest.Year <= 2022, ]
+dallas_crimes <- arrange(dallas_crimes, Arrest.Year, Arrest.Date)
+
+# making the date variable a "as.Date" variable to make it easier for plotting
+dallas_crimes$Arrest.Date <- as.Date(dallas_crimes$Arrest.Date, format = "%m/%d/%y", tryFormats = c("%m/%d/%y"))
+
+# making the date variable a "as.Date" variable to make it easier for plotting
+phoenix_crimes$DATE_OCCUR <- as.Date(phoenix_crimes$DATE_OCCUR, format = "%m/%d/%Y")
+
+# getting rid of variables we won't use
+phoenix_crimes <- dplyr::select(phoenix_crimes, c(-QTR, -UNIQUE_NAME_ID, -ARST_OFFICER,
+                         -PRECINCT_NUM, -BEAT_NUM, -MAPGRID, -COUNCIL_DISTRICT))
+# not counting the data in 2023 to make the comparisons cleaner
+phoenix_crimes <- filter(phoenix_crimes, YEAR < 2023)
+
+# omitting any "NA's"
+phoenix_crimes <- na.omit(phoenix_crimes)
+phoenix_crimes <- phoenix_crimes[seq(1, nrow(phoenix_crimes),4), ]
+
+# renaming the column names 
+colnames(dallas_crimes) <- c("incidentnum", "year", "date", "time", 
+                            "address", "zipcode", "latitude", "longitude", "city", 
+                            "state", "dotw", "location", "weapon", "age", 
+                            "race", "sex", "drugrelated", "type")
+colnames(phoenix_crimes) <- c("incidentnum", "date", "dotw", "month", "year", 
+                              "type", "sex", "race", "ethnicity", "racegrp", "age",
+                              "agegrp", "officersex", "officerrace", "officergrp", 
+                              "address", "precinct", "beat", "felonycharges", "misdemeanorcharges", "othercharges", "unkowncharges",  "violentcharges", "propertycharges", "drugcharges", "assaultofficercharges")
+
+# Cleaning the day of the week and month data for Phoenix
+rep_str <- c("1-" = "","2-" = "", "3-" = "", "4-" = "", "5-" = "", "6-" = "", "7-" = "")
+phoenix_crimes$dotw <- str_replace_all(phoenix_crimes$dotw, rep_str)
+
+rep_str2 <- c("0-" = "", "1-" = "","2-" = "", "3-" = "", "4-" = "", "5-" = "", "6-" = "", "7-" = "", "8-" = "", "9-" = "", "10-" = "", "11-" = "", "12-" = "")
+phoenix_crimes$month <- str_replace_all(phoenix_crimes$month, rep_str2)
+phoenix_crimes$month <- str_replace(phoenix_crimes$month,"0", "")
+phoenix_crimes$month <- str_replace(phoenix_crimes$month,"1", "")
+
+# Specifying "Other" in the race category
+phoenix_crimes$racegrp <- str_replace(phoenix_crimes$racegrp, "Other", "Asian")
+
+
+# Cleaning the month data for Dallas 
+dallas_crimes$month <- month(ymd(dallas_crimes$date))
+dallas_crimes$month <- month.abb[dallas_crimes$month]
+dallas_crimes<- dallas_crimes[order(dallas_crimes$date), ]
+dallas_crimes <- dallas_crimes[-c(1,2), ]
+capwords <- function(s, strict = FALSE) {
+    cap <- function(s) paste(toupper(substring(s, 1, 1)),
+                  {s <- substring(s, 2); if(strict) tolower(s) else s},
+                             sep = "", collapse = " " )
+    sapply(strsplit(s, split = " "), cap, USE.NAMES = !is.null(names(s)))
+}
+
+# Abbreviating the data for month and day of the week
+phoenix_crimes$month <- substr(phoenix_crimes$month, 1, 3)
+phoenix_crimes$month <- capwords(tolower((phoenix_crimes$month)))
+phoenix_crimes$month <- as.factor(phoenix_crimes$month)
+phoenix_crimes$dotw <- substr(phoenix_crimes$dotw, 1, 3)
+phoenix_crimes$dotw <- capwords(tolower(phoenix_crimes$dotw))
+
+# Manipulating the data to show yes or no for drug charges based on the number of charges
+indexyes <- which(phoenix_crimes$drugcharges > 0)
+indexno <- which(phoenix_crimes$drugcharges == 0)
+phoenix_crimes$drugcharges[indexyes] <- "yes"
+phoenix_crimes$drugcharges[indexno] <- "no"
+
+# Cleaning the weapon variable in Dallas data to only keep relevant ones and combine 
+# similar categories
+index_firearm <- which(dallas_crimes$weapon == 'Firearm (Type Not Stated)' |
+                         dallas_crimes$weapon == 'Other Firearm' | 
+                         dallas_crimes$weapon == 'Gun' |
+                         dallas_crimes$weapon == '33')
+index_unarmed <- which(dallas_crimes$weapon == 'Unarmed' |
+                         dallas_crimes$weapon == 'None' |
+                         dallas_crimes$weapon == 'Hands/Feet')
+index_blade <- which(dallas_crimes$weapon == 'Knife - Butcher' | 
+                       dallas_crimes$weapon == 'Knife - Other' |
+                       dallas_crimes$weapon == 'Knife - Pocket' |
+                       dallas_crimes$weapon == 'Lethal Cutting Instrument' | 
+                       dallas_crimes$weapon == 'Stabbing Instrument')
+index_misc <- which(dallas_crimes$weapon == 'Other' |
+                      dallas_crimes$weapon == 'Missle/Arrow' |
+                      dallas_crimes$weapon == 'Poison' |
+                      dallas_crimes$weapon == 'Rock' |
+                      dallas_crimes$weapon == 'Drugs' |
+                      dallas_crimes$weapon == 'THREATS')
+
+dallas_crimes$weapon[index_firearm] <- 'Other Firearm'
+dallas_crimes$weapon[index_unarmed] <- 'Unarmed'
+dallas_crimes$weapon[index_blade] <- 'Blades'
+dallas_crimes$weapon[index_misc] <- 'Miscellaneous'
+
+
+# Getting rid of any Unknowns for racegrp
+index <- which(phoenix_crimes$racegrp == "Unknown")
+
+phoenix_crimes <- (phoenix_crimes[-index,])
+
+```
+
+```{r}
+# plotting the Dallas crime per month
+ggplot(data = dallas_crimes) +
+  geom_bar(aes(x = fct_inorder(month)), fill = "red") +
+  ggtitle("Crimes in Dallas per month") +
+  labs(x = "Month", y = "Number of Crimes")
+
+# plotting the Phoenix crime per month
+ggplot(data = phoenix_crimes) +
+  geom_bar(aes(x = fct_inorder(month)), fill = "darkgreen") +
+  ggtitle("Crimes in Phoenix per month") +
+  labs(x = "Month", y = "Number of Crimes") 
+```
+
+```{r}
+# Plotting frequency of crimes during the week for Dallas  
+ggplot(dallas_crimes) + 
+  geom_bar(stat = "count", aes(x = fct_inorder(dotw), fill = weapon)) +
+  labs(x = "Day of Week", y = "Number of Crimes") + 
+  ggtitle("Number of crimes in Dallas by day of the week")+ 
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+
+
+# Plotting frequency of crimes during the week for Phoenix  
+
+ggplot(phoenix_crimes, aes(x = fct_inorder(dotw))) + 
+  geom_bar(stat = "count", aes(fill = dotw)) +
+  labs(x = "Day of Week", y = "Number of Crimes") + 
+  ggtitle("Number of crimes in phoenix by day of the week")
+
+dallas_crimes$zipcode <- as.factor(dallas_crimes$zipcode)
+dallas_crimes_zip <- filter(dallas_crimes, zipcode %in% c(75211, 75227, 75243, 75231, 75287, 75225, 75248))
+
+ggplot(dallas_crimes_zip) + 
+  geom_bar(stat = 'count', aes(x = (zipcode), fill = weapon)) + 
+  labs(x = 'Zipcode', y = 'Number of Crimes') + 
+  ggtitle('Weapon distribution by zipcode')
+
+
+```
+General crime trend... Dallas crime rate may be more sporadic, Phoenix may be more but less spikes. maybe we can add some line to indicate when christmas is or other major holidays
+```{r}
+######
+# Crime in Dallas
+ggplot(data = dallas_crimes) +
+  geom_line(stat = "count", aes(x = date), color = "blue") +
+  ggtitle("Crimes trend overtime for Dallas") +
+  labs(x = "Year", y = "Number of Crimes") +
+  geom_vline(aes(xintercept = as.Date("2021-12-25"), color = "Christmas"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2020-12-25"), color = "Christmas"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2019-12-25"), color = "Christmas"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2018-12-25"), color = "Christmas"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2021-11-25"), color = "Thanksgiving"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2020-11-26"), color = "Thanksgiving"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2019-11-28"), color = "Thanksgiving"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2018-11-22"), color = "Thanksgiving"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2021-2-14"), color = "Valentines"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2020-2-14"), color = "Valentines"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2019-2-14"), color = "Valentines"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2018-2-14"), color = "Valentines"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2021-10-31"), color = "Halloween"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2020-10-31"), color = "Halloween"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2019-10-31"), color = "Halloween"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2018-10-31"), color = "Halloween"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2021-7-4"), color = "July4"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2020-7-4"), color = "July4"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2019-7-4"), color = "July4"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2018-7-4"), color = "July4"), linetype = "longdash", size = 0.6) +
+  scale_color_manual(name = "Holidays", values = c(Christmas = "darkgreen", Thanksgiving = "orange", Valentines = "red", Halloween = "brown", July4 = "purple")) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+# Comparing crime count on holidays(Dallas)
+
+# Christmas
+xmas_18_dal <- length(which(dallas_crimes$date == '2018-12-25'))
+xmas_19_dal <- length(which(dallas_crimes$date == '2019-12-25'))
+xmas_20_dal <- length(which(dallas_crimes$date == '2020-12-25'))
+xmas_21_dal <- length(which(dallas_crimes$date == '2019-12-25'))
+
+# Average crime in Christmas week
+xmas_week_18_dal <- floor(length(which(dallas_crimes$date >= "2018-12-22" & dallas_crimes$date <= "2018-12-28" & dallas_crimes$date != '2018-12-25')) / 6)
+xmas_week_19_dal <- floor(length(which(dallas_crimes$date >= "2019-12-22" & dallas_crimes$date <= "2019-12-28" & dallas_crimes$date != '2019-12-25')) / 6)
+xmas_week_20_dal <- floor(length(which(dallas_crimes$date >= "2020-12-22" & dallas_crimes$date <= "2020-12-28" & dallas_crimes$date != '2020-12-25')) / 6)
+xmas_week_21_dal <- floor(length(which(dallas_crimes$date >= "2021-12-22" & dallas_crimes$date <= "2021-12-28" & dallas_crimes$date != '2021-12-25')) / 6)
+
+# Halloween
+hallow_18_dal <- length(which(dallas_crimes$date == '2018-10-31'))
+hallow_19_dal <- length(which(dallas_crimes$date == '2019-10-31'))
+hallow_20_dal <- length(which(dallas_crimes$date == '2020-10-31'))
+hallow_21_dal <- length(which(dallas_crimes$date == '2021-10-31'))
+
+# Average crime in Halloween Week
+hallow_week_18_dal <- floor(length(which(dallas_crimes$date >= "2018-10-28" & dallas_crimes$date <= "2018-11-03" & dallas_crimes$date != '2018-10-31')) / 6)
+hallow_week_19_dal <- floor(length(which(dallas_crimes$date >= "2019-10-28" & dallas_crimes$date <= "2019-11-03" & dallas_crimes$date != '2019-10-31')) / 6)
+hallow_week_20_dal <- floor(length(which(dallas_crimes$date >= "2020-10-28" & dallas_crimes$date <= "2020-11-03" & dallas_crimes$date != '2020-10-31')) / 6)
+hallow_week_21_dal <- floor(length(which(dallas_crimes$date >= "2021-10-28" & dallas_crimes$date <= "2021-11-03" & dallas_crimes$date != '2021-10-31')) / 6)
+
+# July 4th
+july4_18_dal <- length(which(dallas_crimes$date == '2018-07-31'))
+july4_19_dal <- length(which(dallas_crimes$date == '2019-07-31'))
+july4_20_dal <- length(which(dallas_crimes$date == '2020-07-31'))
+july4_21_dal <- length(which(dallas_crimes$date == '2021-07-31'))
+
+# Average crime in July 4 week
+july4_week_18_dal <- floor(length(which(dallas_crimes$date >= "2018-07-01" & dallas_crimes$date <= "2018-07-07" & dallas_crimes$date != '2018-07-04')) / 6)
+july4_week_19_dal <- floor(length(which(dallas_crimes$date >= "2019-07-01" & dallas_crimes$date <= "2019-07-07" & dallas_crimes$date != '2019-07-04')) / 6)
+july4_week_20_dal <- floor(length(which(dallas_crimes$date >= "2020-07-01" & dallas_crimes$date <= "2020-07-07" & dallas_crimes$date != '2020-07-04')) / 6)
+july4_week_21_dal <- floor(length(which(dallas_crimes$date >= "2018-07-01" & dallas_crimes$date <= "2018-07-07" & dallas_crimes$date != '2018-07-04')) / 6)
+
+# Thanksgiving
+tks_18_dal <- length(which(dallas_crimes$date == '2018-11-22'))
+tks_19_dal <- length(which(dallas_crimes$date == '2019-11-28'))
+tks_20_dal <- length(which(dallas_crimes$date == '2020-11-26'))
+tks_21_dal <- length(which(dallas_crimes$date == '2018-11-25'))
+
+# Average crime in Thanksgiving week
+tks_week_18_dal <- floor(length(which(dallas_crimes$date >= "2018-11-19" & dallas_crimes$date <= "2018-11-25" & dallas_crimes$date != '2018-11-22')) / 6)
+tks_week_19_dal <- floor(length(which(dallas_crimes$date >= "2019-11-25" & dallas_crimes$date <= "2019-12-01" & dallas_crimes$date != '2019-11-28')) / 6)
+tks_week_20_dal <- floor(length(which(dallas_crimes$date >= "2020-11-23" & dallas_crimes$date <= "2020-11-29" & dallas_crimes$date != '2018-11-26')) / 6)
+tks_week_21_dal <- floor(length(which(dallas_crimes$date >= "2021-11-22" & dallas_crimes$date <= "2021-11-28" & dallas_crimes$date != '2021-11-25')) / 6)
+
+# Valentines
+val_18_dal <- length(which(dallas_crimes$date == '2018-02-14'))
+val_19_dal <- length(which(dallas_crimes$date == '2019-02-14'))
+val_20_dal <- length(which(dallas_crimes$date == '2020-02-14'))
+val_21_dal <- length(which(dallas_crimes$date == '2021-02-14'))
+
+# Average crime in Valentines Week
+val_week_18_dal <- floor(length(which(dallas_crimes$date >= "2018-02-11" & dallas_crimes$date <= "2018-02-17" & dallas_crimes$date != '2018-02-14')) / 6)
+val_week_19_dal <- floor(length(which(dallas_crimes$date >= "2019-02-11" & dallas_crimes$date <= "2019-02-17" & dallas_crimes$date != '2019-02-14')) / 6)
+val_week_20_dal <- floor(length(which(dallas_crimes$date >= "2020-02-11" & dallas_crimes$date <= "2020-02-17" & dallas_crimes$date != '2020-02-14')) / 6)
+val_week_21_dal <- floor(length(which(dallas_crimes$date >= "2021-02-11" & dallas_crimes$date <= "2021-02-17" & dallas_crimes$date != '2021-02-14')) / 6)
+
+holidays_dallas <- data.frame(holiday = c(xmas_18_dal, xmas_19_dal, xmas_20_dal, xmas_21_dal, hallow_18_dal, hallow_19_dal, hallow_20_dal, hallow_21_dal, july4_18_dal, july4_19_dal, july4_20_dal, july4_21_dal, tks_18_dal, tks_19_dal, tks_20_dal, tks_21_dal, val_18_dal, val_19_dal, val_20_dal, val_21_dal), 
+                              weekday = c(xmas_week_18_dal, xmas_week_19_dal, xmas_week_20_dal, xmas_week_20_dal, hallow_week_18_dal, hallow_week_19_dal, hallow_week_20_dal, hallow_week_21_dal, july4_week_18_dal, july4_week_19_dal, july4_week_20_dal, july4_week_21_dal, tks_week_18_dal, tks_week_19_dal, tks_week_20_dal, tks_week_21_dal, val_week_18_dal, val_week_19_dal, val_week_20_dal, val_week_21_dal), 
+                              name = c(rep('Christmas', 4), rep('Halloween', 4), rep('July4', 4), rep('Thanksgiving', 4), rep('Valentines', 4)), 
+                              year = rep(c('2018', '2019', '2020', '2021'), 5))
+affected = c(holidays_dallas$holiday > holidays_dallas$weekday)
+holidays_dallas <- cbind(holidays_dallas, affected)
+######
+# Crime in Phoenix
+ggplot(data = phoenix_crimes) +
+  geom_line(stat = "count", aes(x = date), color = "blue") + 
+  ggtitle("Crime trend overtime for phoenix") +
+  labs(x = "Year", y = "Number of Crimes") +
+  geom_vline(aes(xintercept = as.Date("2021-12-25"), color = "Christmas"), linetype = "longdash", lwd = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2020-12-25"), color = "Christmas"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2019-12-25"), color = "Christmas"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2018-12-25"), color = "Christmas"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2021-11-25"), color = "Thanksgiving"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2020-11-26"), color = "Thanksgiving"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2019-11-28"), color = "Thanksgiving"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2018-11-22"), color = "Thanksgiving"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2021-2-14"), color = "Valentines"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2020-2-14"), color = "Valentines"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2019-2-14"), color = "Valentines"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2018-2-14"), color = "Valentines"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2021-10-31"), color = "Halloween"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2020-10-31"), color = "Halloween"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2019-10-31"), color = "Halloween"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2018-10-31"), color = "Halloween"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2021-7-4"), color = "July4"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2020-7-4"), color = "July4"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2019-7-4"), color = "July4"), linetype = "longdash", size = 0.6) +
+  geom_vline(aes(xintercept = as.Date("2018-7-4"), color = "July4"), linetype = "longdash", size = 0.6) +
+  scale_color_manual(name = "Holidays", values = c(Christmas = "darkgreen", Thanksgiving = "orange", Valentines = "red", Halloween = "brown", July4 = "purple")) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+xmas_18_pho <- length(which(phoenix_crimes$date == '2018-12-25'))
+xmas_19_pho <- length(which(phoenix_crimes$date == '2019-12-25'))
+xmas_20_pho <- length(which(phoenix_crimes$date == '2020-12-25'))
+xmas_21_pho <- length(which(phoenix_crimes$date == '2019-12-25'))
+
+# Average crime in Christmas week
+xmas_week_18_pho <- floor(length(which(phoenix_crimes$date >= "2018-12-22" & phoenix_crimes$date <= "2018-12-28" & phoenix_crimes$date != '2018-12-25')) / 6)
+xmas_week_19_pho <- floor(length(which(phoenix_crimes$date >= "2019-12-22" & phoenix_crimes$date <= "2019-12-28" & phoenix_crimes$date != '2019-12-25')) / 6)
+xmas_week_20_pho <- floor(length(which(phoenix_crimes$date >= "2020-12-22" & phoenix_crimes$date <= "2020-12-28" & phoenix_crimes$date != '2020-12-25')) / 6)
+xmas_week_21_pho <- floor(length(which(phoenix_crimes$date >= "2021-12-22" & phoenix_crimes$date <= "2021-12-28" & phoenix_crimes$date != '2021-12-25')) / 6)
+
+# Halloween
+hallow_18_pho <- length(which(phoenix_crimes$date == '2018-10-31'))
+hallow_19_pho <- length(which(phoenix_crimes$date == '2019-10-31'))
+hallow_20_pho <- length(which(phoenix_crimes$date == '2020-10-31'))
+hallow_21_pho <- length(which(phoenix_crimes$date == '2021-10-31'))
+
+# Average crime in Halloween Week
+hallow_week_18_pho <- floor(length(which(phoenix_crimes$date >= "2018-10-28" & phoenix_crimes$date <= "2018-11-03" & phoenix_crimes$date != '2018-10-31')) / 6)
+hallow_week_19_pho <- floor(length(which(phoenix_crimes$date >= "2019-10-28" & phoenix_crimes$date <= "2019-11-03" & phoenix_crimes$date != '2019-10-31')) / 6)
+hallow_week_20_pho <- floor(length(which(phoenix_crimes$date >= "2020-10-28" & phoenix_crimes$date <= "2020-11-03" & phoenix_crimes$date != '2020-10-31')) / 6)
+hallow_week_21_pho <- floor(length(which(phoenix_crimes$date >= "2021-10-28" & phoenix_crimes$date <= "2021-11-03" & phoenix_crimes$date != '2021-10-31')) / 6)
+
+# July 4th
+july4_18_pho <- length(which(phoenix_crimes$date == '2018-07-31'))
+july4_19_pho <- length(which(phoenix_crimes$date == '2019-07-31'))
+july4_20_pho <- length(which(phoenix_crimes$date == '2020-07-31'))
+july4_21_pho <- length(which(phoenix_crimes$date == '2021-07-31'))
+
+# Average crime in July 4 week
+july4_week_18_pho <- floor(length(which(phoenix_crimes$date >= "2018-07-01" & phoenix_crimes$date <= "2018-07-07" & phoenix_crimes$date != '2018-07-04')) / 6)
+july4_week_19_pho <- floor(length(which(phoenix_crimes$date >= "2019-07-01" & phoenix_crimes$date <= "2019-07-07" & phoenix_crimes$date != '2019-07-04')) / 6)
+july4_week_20_pho <- floor(length(which(phoenix_crimes$date >= "2020-07-01" & phoenix_crimes$date <= "2020-07-07" & phoenix_crimes$date != '2020-07-04')) / 6)
+july4_week_21_pho <- floor(length(which(phoenix_crimes$date >= "2018-07-01" & phoenix_crimes$date <= "2018-07-07" & phoenix_crimes$date != '2018-07-04')) / 6)
+
+# Thanksgiving
+tks_18_pho <- length(which(phoenix_crimes$date == '2018-11-22'))
+tks_19_pho <- length(which(phoenix_crimes$date == '2019-11-28'))
+tks_20_pho <- length(which(phoenix_crimes$date == '2020-11-26'))
+tks_21_pho <- length(which(phoenix_crimes$date == '2018-11-25'))
+
+# Average crime in Thanksgiving week
+tks_week_18_pho <- floor(length(which(phoenix_crimes$date >= "2018-11-19" & phoenix_crimes$date <= "2018-11-25" & phoenix_crimes$date != '2018-11-22')) / 6)
+tks_week_19_pho <- floor(length(which(phoenix_crimes$date >= "2019-11-25" & phoenix_crimes$date <= "2019-12-01" & phoenix_crimes$date != '2019-11-28')) / 6)
+tks_week_20_pho <- floor(length(which(phoenix_crimes$date >= "2020-11-23" & phoenix_crimes$date <= "2020-11-29" & phoenix_crimes$date != '2018-11-26')) / 6)
+tks_week_21_pho <- floor(length(which(phoenix_crimes$date >= "2021-11-22" & phoenix_crimes$date <= "2021-11-28" & phoenix_crimes$date != '2021-11-25')) / 6)
+
+# Valentines
+val_18_pho <- length(which(phoenix_crimes$date == '2018-02-14'))
+val_19_pho <- length(which(phoenix_crimes$date == '2019-02-14'))
+val_20_pho <- length(which(phoenix_crimes$date == '2020-02-14'))
+val_21_pho <- length(which(phoenix_crimes$date == '2021-02-14'))
+
+# Average crime in Valentines Week
+val_week_18_pho <- floor(length(which(phoenix_crimes$date >= "2018-02-11" & phoenix_crimes$date <= "2018-02-17" & phoenix_crimes$date != '2018-02-14')) / 6)
+val_week_19_pho <- floor(length(which(phoenix_crimes$date >= "2019-02-11" & phoenix_crimes$date <= "2019-02-17" & phoenix_crimes$date != '2019-02-14')) / 6)
+val_week_20_pho <- floor(length(which(phoenix_crimes$date >= "2020-02-11" & phoenix_crimes$date <= "2020-02-17" & phoenix_crimes$date != '2020-02-14')) / 6)
+val_week_21_pho <- floor(length(which(phoenix_crimes$date >= '2021-02-11' & phoenix_crimes$date <= '2021-02-17' & phoenix_crimes$date != '2021-02-14')) / 6)
+
+holidays_phoenix <- data.frame(holiday = c(xmas_18_pho, xmas_19_pho, xmas_20_pho, xmas_21_pho, hallow_18_pho, hallow_19_pho, hallow_20_pho, hallow_21_pho, july4_18_pho, july4_19_pho, july4_20_pho, july4_21_pho, tks_18_pho, tks_19_pho, tks_20_pho, tks_21_pho, val_18_pho, val_19_pho, val_20_pho, val_21_pho), 
+                               weekday = c(xmas_week_18_pho, xmas_week_19_pho, xmas_week_20_pho, xmas_week_20_pho, hallow_week_18_pho, hallow_week_19_pho, hallow_week_20_pho, hallow_week_21_pho, july4_week_18_pho, july4_week_19_pho, july4_week_20_pho, july4_week_21_pho, tks_week_18_pho, tks_week_19_pho, tks_week_20_pho, tks_week_21_pho, val_week_18_pho, val_week_19_pho, val_week_20_pho, val_week_21_pho), 
+                               name = c(rep('Christmas', 4), rep('Halloween', 4), rep('July4', 4), rep('Thanksgiving', 4), rep('Valentines', 4)), 
+                               year = rep(c('2018', '2019', '2020', '2021'), 5))
+affected_pho = c(holidays_phoenix$holiday > holidays_phoenix$weekday)
+holidays_phoenix <- cbind(holidays_phoenix, affected_pho)
+
+```
+
+Drug related crimes/ ages committing the crimes
+```{r}
+# Getting rid of unknowns and then using some of the relevant zipcodes for Dallas
+dallas_crimes <- filter(dallas_crimes, drugrelated != "Uknown")
+dallas_crimes_zip <- filter(dallas_crimes, zipcode %in% c(75211, 75227, 75243, 75231, 75287, 75225, 75248))
+# Plotting the frequency of crime in a zipcode and seeing if they are drug related or not
+ggplot(data = dallas_crimes_zip) +
+  geom_freqpoly(aes(x = age, color = drugrelated), size = 1, bins = 20) +
+  ggtitle("Criminals Age for Dallas") +
+  labs(x = "Age", y = "Number of Crimes") +
+  facet_wrap(~zipcode) +
+    theme(panel.margin=unit(.05, "lines"),
+        panel.border = element_rect(color = "black", fill = NA, size = 1), 
+        strip.background = element_rect(color = "black", size = 1))
+
+# Plotting the frequency of crime in a district and seeing if they are drug related or not
+
+ggplot(data = phoenix_crimes) +
+  geom_freqpoly(aes(x = age, color = drugcharges), size = 1, bins = 20) +
+  ggtitle("Criminals Age for phoenix") +
+  labs(x = "Age", y = "Number of Crimes")+
+  facet_wrap(~precinct)
+```
+
+
+```{r}
+# Specifying locations to analyze
+dallas_crimes_highway <- filter(dallas_crimes, location == c("Highway, Street, Alley ETC", "Retail Store", "Apartment Parking Lot", "Bar/NightClub/DanceHall ETC." ))
+dallas_crimes_highway <- filter(dallas_crimes_highway, sex != "Unknown")
+
+# Plotting the relationship between
+ggplot(dallas_crimes_highway, aes(x = age, y = location)) +
+  geom_boxplot(fill = "orange") +
+  labs(x = "Age", y = "Location") +
+  ggtitle("Boxplot of location vs age in Dallas")
+
+```
+
+
+```{r}
+# Plotting the relationship between felony charges and race
+race_table <- table(phoenix_crimes$racegrp, phoenix_crimes$felonycharges, phoenix_crimes$sex)
+df_race <- as.data.frame(race_table)
+colnames(df_race) <- c('race', 'felony', 'sex', 'count')
+
+ggplot(df_race) +
+  geom_boxplot(aes(x = race, y = count, fill = sex)) +
+  labs(x = "Race", y = "Felony Charges") +
+  ggtitle("Violin Plot of Race vs Felony Charges") +
+  theme_bw()+ theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+  
+```
+
+
+
